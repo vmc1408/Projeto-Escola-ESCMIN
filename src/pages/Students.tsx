@@ -46,6 +46,7 @@ import { Student, Class, Enrollment, Course } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useUnits } from '../contexts/UnitContext';
+import { isItemInUnit, getItemUnitId } from '../lib/unitService';
 
 // Memoized List Item to prevent lag
 const StudentItem = React.memo(({ 
@@ -1499,10 +1500,10 @@ export function Students() {
       if (selectedYear === 'all' || selectedClassId === 'unallocated') matchesYear = true;
 
       let matchesUnit = true;
-      if (hasMultipleUnits && globalUnitId !== 'all') {
+      if (globalUnitId && globalUnitId !== 'all') {
         const studentClass = classes.find(c => c.id === s.class_id);
-        const studentUnit = s.unit_id || studentClass?.unit_id || 'matriz';
-        matchesUnit = studentUnit === globalUnitId;
+        const studentUnit = getItemUnitId(s) || (studentClass ? getItemUnitId(studentClass) : 'matriz');
+        matchesUnit = isItemInUnit(studentUnit, globalUnitId, activeUnits);
       }
 
       return matchesSearch && matchesStatus && matchesYear && matchesClass && matchesUnit;

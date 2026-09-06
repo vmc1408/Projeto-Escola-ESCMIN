@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase, isSupabaseConfigured, fetchWithTimeout, clearCorruptedAuthTokens, isJwtOrTokenError } from '../lib/supabase';
-import { saveData, deleteData, fetchById } from '../lib/database';
+import { saveData, deleteData, fetchById, fetchQuery } from '../lib/database';
 import { UserProfile } from '../types';
 
 type AppUser = {
@@ -86,8 +86,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       // Primeira tentativa com timeout balanceado (8s)
-      const data = await fetchById('users', targetUid, isRetry ? 15000 : 8000); 
+      let data = await fetchById('users', targetUid, isRetry ? 15000 : 8000); 
       
+      // Se não encontrou pelo UID diretamente e o usuário possui e-mail, busca pelo e-mail (usuários pré-cadastrados ou salvos por e-mail)
+      if (!data && userRef.current?.email) {
+        const userEmail = userRef.current.email.toLowerCase().trim();
+        try {
+          data = await fetchById('users', userEmail, 5000);
+        } catch {}
+        if (!data) {
+          try {
+            const byQuery = await fetchQuery('users', 'email', '==', userEmail);
+            if (Array.isArray(byQuery) && byQuery.length > 0) {
+              data = byQuery[0];
+            }
+          } catch {}
+        }
+      }
+
       if (data) {
         setProfile(data as UserProfile);
         setLoading(false);

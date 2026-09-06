@@ -8,7 +8,7 @@ import { cn } from '../lib/utils';
 
 export function Navbar() {
   const { profile, logout, lockTimer, lock, isLocked, isLockEnabled } = useAuth();
-  const { activeUnits, hasMultipleUnits, selectedUnitId, setSelectedUnitId, selectedUnit, isRestricted } = useUnits();
+  const { activeUnits, hasMultipleUnits, selectedUnitId, setSelectedUnitId, selectedUnit, isRestricted, getUnitName } = useUnits();
   const location = useLocation();
   const [institution, setInstitution] = useState<any>(null);
   const [avatarError, setAvatarError] = useState(false);
@@ -149,20 +149,24 @@ export function Navbar() {
           </div>
 
           {/* Seletor Global de Unidade ou Badge de Unidade Restrita */}
-          {(hasMultipleUnits || isRestricted) && (
-            <div className="relative mx-auto hidden sm:block" ref={unitDropdownRef}>
+          {(hasMultipleUnits || isRestricted || activeUnits.length > 0) && (
+            <div className="relative flex items-center shrink-0" ref={unitDropdownRef}>
               {isRestricted ? (
                 <div 
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100/90 border border-slate-200/90 text-xs font-semibold text-slate-700 shadow-2xs select-none"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-blue-50/90 border border-blue-200/90 text-xs font-semibold text-slate-700 shadow-2xs select-none"
                   title="Seu perfil possui acesso restrito e direcionado exclusivamente a este polo educacional."
                 >
-                  <Building2 size={14} className="text-blue-600 shrink-0" />
-                  <span className="font-bold text-slate-900">
-                    {selectedUnit?.name || 'Unidade Vinculada'}
-                  </span>
-                  <span className="flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100/80 text-blue-800 uppercase tracking-wider">
-                    <Lock size={10} />
-                    Polo
+                  <Building2 size={15} className="text-blue-600 shrink-0" />
+                  <div className="flex flex-col text-left">
+                    <span className="font-bold text-slate-900 text-xs truncate max-w-[140px] sm:max-w-[220px]">
+                      {getUnitName(selectedUnitId) || selectedUnit?.name || 'Polo Direcionado'}
+                    </span>
+                    <span className="text-[9px] font-bold text-blue-700 uppercase tracking-wider -mt-0.5">
+                      Polo Vinculado
+                    </span>
+                  </div>
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-100 text-blue-800 ml-1 shrink-0" title="Acesso restrito">
+                    <Lock size={11} />
                   </span>
                 </div>
               ) : (
@@ -170,12 +174,12 @@ export function Navbar() {
                   <button
                     type="button"
                     onClick={() => setIsUnitDropdownOpen(!isUnitDropdownOpen)}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 text-xs font-semibold text-slate-700 transition-all cursor-pointer select-none shadow-2xs"
+                    className="flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 text-xs font-semibold text-slate-700 transition-all cursor-pointer select-none shadow-2xs"
                     title="Filtrar visão geral por Unidade ou Filial"
                   >
                     <Building2 size={14} className="text-blue-600 shrink-0" />
-                    <span className="font-bold text-slate-800">
-                      {selectedUnitId === 'all' ? 'Todas as Unidades (Geral)' : (selectedUnit?.name || 'Sede / Matriz')}
+                    <span className="font-bold text-slate-800 truncate max-w-[130px] sm:max-w-[180px]">
+                      {selectedUnitId === 'all' ? 'Todas as Unidades' : (getUnitName(selectedUnitId) || selectedUnit?.name || 'Sede / Matriz')}
                     </span>
                     <ChevronDown 
                       size={12} 

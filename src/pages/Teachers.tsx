@@ -29,6 +29,7 @@ import { formatCurrency, cn, detectSubjectSemester, formatSubjectDisplayName } f
 import { fetchAll, saveData, deleteData, uploadImage } from '../lib/database';
 import { RotateCcw, FileText as FileIcon, Building2 } from 'lucide-react';
 import { useUnits } from '../contexts/UnitContext';
+import { isItemInUnit, getItemUnitId } from '../lib/unitService';
 
 interface Teacher {
   id: string;
@@ -1093,9 +1094,9 @@ export function Teachers() {
       });
       
       let matchesUnit = true;
-      if (hasMultipleUnits && globalUnitId !== 'all') {
-        const teacherUnit = t.unit_id || 'matriz';
-        matchesUnit = teacherUnit === globalUnitId;
+      if (globalUnitId && globalUnitId !== 'all') {
+        const teacherUnit = getItemUnitId(t);
+        matchesUnit = isItemInUnit(teacherUnit, globalUnitId, activeUnits);
       }
 
       return matchesSearch && matchesStatus && matchesSubject && matchesSemester && matchesUnit;

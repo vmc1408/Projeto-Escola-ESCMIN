@@ -101,8 +101,28 @@ export function UnitProvider({ children }: { children: React.ReactNode }) {
   }, [activeUnits]);
 
   const selectedUnit = useMemo(() => {
-    if (effectiveSelectedUnitId === 'all') return null;
-    return units.find(u => u.id === effectiveSelectedUnitId) || null;
+    if (!effectiveSelectedUnitId || effectiveSelectedUnitId === 'all') return null;
+    const norm = effectiveSelectedUnitId.trim().toLowerCase();
+    const found = units.find(u => 
+      u.id.toLowerCase() === norm || 
+      u.name?.toLowerCase() === norm || 
+      u.code?.toLowerCase() === norm
+    );
+    if (found) return found;
+
+    // Fallback gracioso: constrói um objeto de Unidade para que o nome e código nunca apareçam nulos
+    const fallbackName = effectiveSelectedUnitId.includes(' ') 
+      ? effectiveSelectedUnitId 
+      : (effectiveSelectedUnitId.startsWith('unit_') ? 'Polo Educacional' : effectiveSelectedUnitId);
+
+    return {
+      id: effectiveSelectedUnitId,
+      code: 'POLO',
+      name: fallbackName,
+      is_main: norm === 'matriz',
+      active: true,
+      created_at: new Date().toISOString()
+    } as Unit;
   }, [units, effectiveSelectedUnitId]);
 
   const getUnitName = useCallback((unitId?: string) => {
@@ -114,13 +134,13 @@ export function UnitProvider({ children }: { children: React.ReactNode }) {
   }, [units]);
 
   const isItemInActiveUnit = useCallback((itemUnitId?: string) => {
-    return isItemInUnit(itemUnitId, effectiveSelectedUnitId);
-  }, [effectiveSelectedUnitId]);
+    return isItemInUnit(itemUnitId, effectiveSelectedUnitId, units);
+  }, [effectiveSelectedUnitId, units]);
 
   const filterByActiveUnit = useCallback(<T,>(items: T[], getUnitId: (item: T) => string | undefined): T[] => {
     if (!effectiveSelectedUnitId || effectiveSelectedUnitId === 'all') return items;
-    return items.filter(item => isItemInUnit(getUnitId(item), effectiveSelectedUnitId));
-  }, [effectiveSelectedUnitId]);
+    return items.filter(item => isItemInUnit(getUnitId(item), effectiveSelectedUnitId, units));
+  }, [effectiveSelectedUnitId, units]);
 
   return (
     <UnitContext.Provider

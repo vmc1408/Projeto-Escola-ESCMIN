@@ -48,6 +48,7 @@ import { fetchAll, saveData, deleteData } from '../lib/database';
 import { supabase } from '../lib/supabase';
 import { Course } from '../types';
 import { useUnits } from '../contexts/UnitContext';
+import { isItemInUnit, getItemUnitId } from '../lib/unitService';
 import { RotateCcw, FileText as FileIcon } from 'lucide-react';
 
 interface Class {
@@ -2021,12 +2022,12 @@ export function Classes() {
       const matchesAcademicYear = isClassActiveInAcademicYear(c, selectedAcademicYearFilter);
 
       const matchesUnit = (() => {
-        const classUnitId = c.unit_id || 'matriz';
+        const classUnitId = getItemUnitId(c);
         if (selectedUnitFilter !== 'Todos') {
-          return classUnitId === selectedUnitFilter;
+          return isItemInUnit(classUnitId, selectedUnitFilter, activeUnits);
         }
-        if (globalUnitId !== 'all') {
-          return classUnitId === globalUnitId;
+        if (globalUnitId && globalUnitId !== 'all') {
+          return isItemInUnit(classUnitId, globalUnitId, activeUnits);
         }
         return true;
       })();

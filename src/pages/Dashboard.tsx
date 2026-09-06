@@ -31,7 +31,9 @@ import {
   Square,
   Settings2,
   ArrowRight,
-  Info
+  Info,
+  Building2,
+  Lock
 } from 'lucide-react';
 
 import { fetchCount, fetchAll, fetchById, saveBatch, saveData } from '../lib/database';
@@ -42,11 +44,25 @@ import { PageHeader } from '../components/PageHeader';
 import { HabilitationModal } from '../components/HabilitationModal';
 import { Student, Class, Subject, Teacher } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useUnits } from '../contexts/UnitContext';
+import { getItemUnitId, isItemInUnit } from '../lib/unitService';
 import { getAllAcademicSchedulePeriods, formatDateBR } from '../lib/academicUtils';
 
 export function Dashboard() {
   const navigate = useNavigate();
   const { logout, isConnected, connError, profile, canAccess, isTeacher } = useAuth();
+  const { 
+    selectedUnitId, 
+    selectedUnit, 
+    setSelectedUnitId,
+    isRestricted, 
+    restrictedUnitId, 
+    getUnitName, 
+    filterByActiveUnit,
+    activeUnits,
+    hasMultipleUnits 
+  } = useUnits();
+
   const [dbStatus, setDbStatus] = useState<'connected' | 'error' | 'disconnected' | 'checking'>(
     isSupabaseConfigured ? (isDbConnected ? 'connected' : 'checking') : 'disconnected'
   );
@@ -91,6 +107,79 @@ export function Dashboard() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [enrollments, setEnrollments] = useState<any[]>([]);
+
+  // Itens escopados pela unidade ativa (ou unidade restrita do usuário)
+  const scopedStudents = useMemo(() => {
+    return filterByActiveUnit(students, s => getItemUnitId(s));
+  }, [students, filterByActiveUnit]);
+
+  const scopedClasses = useMemo(() => {
+    return filterByActiveUnit(classes, c => getItemUnitId(c));
+  }, [classes, filterByActiveUnit]);
+
+  const scopedTeachers = useMemo(() => {
+    return filterByActiveUnit(teachers, t => getItemUnitId(t));
+  }, [teachers, filterByActiveUnit]);
+
+  const scopedSubjects = useMemo(() => {
+    return filterByActiveUnit(subjects, s => getItemUnitId(s));
+  }, [subjects, filterByActiveUnit]);
+
+  // Estatísticas calculadas dinamicamente de acordo com o escopo de unidade ativo
+  const displayStats = useMemo(() => {
+    const isStudentActive = (s: any) => s.status === 'Ativo' || !s.status || String(s.status).toLowerCase() === 'ativo';
+    const isClassActive = (c: any) => !c.status || c.status === 'Ativo' || String(c.status).toLowerCase() === 'ativo';
+    const isTeacherActive = (t: any) => !t.status || t.status === 'Ativo' || String(t.status).toLowerCase() === 'ativo';
+    const isSubjectActive = (s: any) => !s.status || s.status === 'Ativo' || String(s.status).toLowerCase() === 'ativo';
+
+    // Quando uma unidade específica estiver selecionada (ou se houver itens em memória), computa diretamente dos dados escopados
+    if (selectedUnitId !== 'all' || students.length > 0 || classes.length > 0) {
+      const studTotal = scopedStudents.length;
+      const studActive = scopedStudents.filter(isStudentActive).length;
+
+      const classTotal = scopedClasses.length;
+      const classActive = scopedClasses.filter(isClassActive).length;
+
+      const teacherTotal = scopedTeachers.length;
+      const teacherActive = scopedTeachers.filter(isTeacherActive).length;
+
+      const subjectTotal = scopedSubjects.length;
+      const subjectActive = scopedSubjects.filter(isSubjectActive).length;
+
+      return {
+        students: {
+          total: studTotal,
+          active: studActive,
+          inactive: Math.max(0, studTotal - studActive),
+          archived: 0,
+          current: studTotal
+        },
+        classes: {
+          total: classTotal,
+          active: classActive,
+          inactive: Math.max(0, classTotal - classActive),
+          archived: 0,
+          current: classTotal
+        },
+        teachers: {
+          total: teacherTotal,
+          active: teacherActive,
+          inactive: Math.max(0, teacherTotal - teacherActive),
+          archived: 0,
+          current: teacherTotal
+        },
+        subjects: {
+          total: subjectTotal,
+          active: subjectActive,
+          inactive: Math.max(0, subjectTotal - subjectActive),
+          archived: 0,
+          current: subjectTotal
+        }
+      };
+    }
+
+    return stats;
+  }, [selectedUnitId, scopedStudents, scopedClasses, scopedTeachers, scopedSubjects, students.length, classes.length, stats]);
 
   const [acadSettings, setAcadSettings] = useState<any>(() => {
     try {
@@ -530,7 +619,7 @@ export function Dashboard() {
   // Available academic years derived from standard horizon and existing classes
   const availableAcademicYears = useMemo(() => {
     const yrSet = new Set<string>(['2027', '2026', '2025', '2024', '2023']);
-    classes.forEach(c => {
+    scopedClasses.forEach(c => {
       if (c.unallocated) return;
       const yr = getClassStartYear(c);
       if (yr && !isNaN(yr)) {
@@ -538,19 +627,19 @@ export function Dashboard() {
       }
     });
     return Array.from(yrSet).sort((a, b) => Number(b) - Number(a));
-  }, [classes, getClassStartYear]);
+  }, [scopedClasses, getClassStartYear]);
 
   const studentsByClass = useMemo(() => {
     const isClassActive = (c: any) => !c.status || c.status === 'Ativo' || String(c.status).toLowerCase() === 'ativo';
 
-    const activeClasses = classes.filter(c => {
+    const activeClasses = scopedClasses.filter(c => {
       if (selectedAcademicYear === 'ATUAL') {
         if (!isClassActive(c)) return false;
       }
       return isClassActiveInAcademicYear(c, selectedAcademicYear);
     });
 
-    const activeStudents = students.filter(s => s.status === 'Ativo' || !s.status || String(s.status).toLowerCase() === 'ativo');
+    const activeStudents = scopedStudents.filter(s => s.status === 'Ativo' || !s.status || String(s.status).toLowerCase() === 'ativo');
     
     // Active enrollments
     const activeEnrollments = (enrollments || []).filter((e: any) => e.status === 'Ativo' || !e.status || String(e.status).toLowerCase() === 'ativo');
@@ -638,12 +727,12 @@ export function Dashboard() {
 
     // Find active students not allocated in any active class
     const allAllocatedStudentIds = new Set<string>();
-    classes.filter(isClassActive).forEach(c => {
+    scopedClasses.filter(isClassActive).forEach(c => {
       const fromEnrollments = enrolledMap.get(c.id);
       if (fromEnrollments) fromEnrollments.forEach(id => allAllocatedStudentIds.add(id));
     });
     activeStudents.forEach(s => {
-      if (s.class_id && classes.some(c => c.id === s.class_id && isClassActive(c))) {
+      if (s.class_id && scopedClasses.some(c => c.id === s.class_id && isClassActive(c))) {
         allAllocatedStudentIds.add(s.id);
       }
     });
@@ -791,7 +880,7 @@ export function Dashboard() {
           );
 
         // Calculate student count for this class
-        const count = students.filter(s => 
+        const count = scopedStudents.filter(s => 
           (s.status === 'Ativo' || !s.status) && 
           (s.class_id === c.id || (s as any).current_class_id === c.id)
         ).length;
@@ -805,7 +894,7 @@ export function Dashboard() {
         };
       })
       .sort((a, b) => b.startYr - a.startYr);
-  }, [classes, students, targetHabilitationYear, habilitatedMap, getClassStartYear]);
+  }, [scopedClasses, scopedStudents, targetHabilitationYear, habilitatedMap, getClassStartYear]);
 
   const [isDeactivating, setIsDeactivating] = useState(false);
 
@@ -862,11 +951,11 @@ export function Dashboard() {
   const handleViewStudents = (classId: string, className: string, isUnallocated: boolean) => {
     let filtered: Student[] = [];
     const isClassActive = (c: any) => !c.status || c.status === 'Ativo' || String(c.status).toLowerCase() === 'ativo';
-    const activeStudents = students.filter(s => s.status === 'Ativo' || !s.status || String(s.status).toLowerCase() === 'ativo');
+    const activeStudents = scopedStudents.filter(s => s.status === 'Ativo' || !s.status || String(s.status).toLowerCase() === 'ativo');
     const activeEnrollments = (enrollments || []).filter((e: any) => e.status === 'Ativo' || !e.status || String(e.status).toLowerCase() === 'ativo');
     
     if (isUnallocated) {
-      const activeClasses = classes.filter(isClassActive);
+      const activeClasses = scopedClasses.filter(isClassActive);
       const activeClassIds = new Set(activeClasses.map(c => c.id));
       const enrolledStudentIds = new Set<string>();
       activeEnrollments.forEach((e: any) => {
@@ -931,10 +1020,10 @@ export function Dashboard() {
   }, [fetchStats]);
 
   const statCards = [
-    { label: 'Alunos', stats: stats.students, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', path: '/students' },
-    { label: 'Turmas', stats: stats.classes, icon: GraduationCap, color: 'text-emerald-600', bg: 'bg-emerald-50', path: '/classes' },
-    { label: 'Disciplinas', stats: stats.subjects, icon: BookOpen, color: 'text-blue-700', bg: 'bg-blue-100/50', path: '/subjects' },
-    { label: 'Professores', stats: stats.teachers, icon: UserCheck, color: 'text-emerald-700', bg: 'bg-emerald-100/50', path: '/teachers' },
+    { label: 'Alunos', stats: displayStats.students, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', path: '/students' },
+    { label: 'Turmas', stats: displayStats.classes, icon: GraduationCap, color: 'text-emerald-600', bg: 'bg-emerald-50', path: '/classes' },
+    { label: 'Disciplinas', stats: displayStats.subjects, icon: BookOpen, color: 'text-blue-700', bg: 'bg-blue-100/50', path: '/subjects' },
+    { label: 'Professores', stats: displayStats.teachers, icon: UserCheck, color: 'text-emerald-700', bg: 'bg-emerald-100/50', path: '/teachers' },
   ];
 
   // Controle de Visualização do Cronograma (Ocultar / Visualizar)
@@ -1557,6 +1646,53 @@ export function Dashboard() {
         </div>
       </motion.div>
 
+      {/* Banner Informativo de Escopo de Unidade / Polo */}
+      {(selectedUnitId !== 'all' || isRestricted) && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-blue-50/90 border border-blue-200/90 rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+              <Building2 size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-xs sm:text-sm font-bold text-blue-950">
+                  {getUnitName(selectedUnitId) || selectedUnit?.name || 'Polo Educacional'}
+                </h3>
+                {isRestricted ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-200/80 text-blue-950 text-[10px] font-bold uppercase tracking-wider">
+                    <Lock size={10} />
+                    Acesso Restrito ao Polo
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-blue-200 text-blue-800 text-[10px] font-bold uppercase tracking-wider">
+                    Filtro Ativo
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-blue-800/90 mt-0.5">
+                {isRestricted 
+                  ? 'Seu perfil de usuário possui acesso restrito e visualiza somente os alunos, turmas e professores vinculados a este polo.'
+                  : 'Os indicadores de síntese, ocupação de turmas e listas abaixo estão filtrados exclusivamente para esta unidade.'}
+              </p>
+            </div>
+          </div>
+
+          {!isRestricted && (
+            <button
+              type="button"
+              onClick={() => setSelectedUnitId('all')}
+              className="self-start sm:self-auto px-2.5 py-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-100/60 border border-blue-200 rounded-lg transition-colors cursor-pointer shrink-0 shadow-2xs"
+            >
+              Ver Todas as Unidades (Geral)
+            </button>
+          )}
+        </motion.div>
+      )}
+
       {/* Síntese Institucional - Régua de Indicadores Consolidados */}
       <motion.div
         initial={{ opacity: 0, y: -5 }}
@@ -1567,9 +1703,13 @@ export function Dashboard() {
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-3.5 bg-blue-600 rounded-full inline-block" />
-            <h4 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Síntese da Instituição</h4>
+            <h4 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+              {selectedUnitId === 'all' ? 'Síntese da Instituição' : `Síntese: ${getUnitName(selectedUnitId) || selectedUnit?.name || 'Polo'}`}
+            </h4>
           </div>
-          <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">Quadro Geral de Cadastros</span>
+          <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">
+            {selectedUnitId === 'all' ? 'Quadro Geral de Cadastros' : 'Dados Exclusivos do Polo'}
+          </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -1592,21 +1732,21 @@ export function Dashboard() {
                 </div>
               </div>
               <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[9px] font-bold">
-                {isRefreshing ? '...' : `${stats.students.active} ativos`}
+                {isRefreshing ? '...' : `${displayStats.students.active} ativos`}
               </span>
             </div>
 
             <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
               <div className="flex items-baseline gap-1.5">
                 <span className="text-xl font-black text-slate-900 tabular-nums">
-                  {isRefreshing ? '...' : stats.students.active}
+                  {isRefreshing ? '...' : displayStats.students.active}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">
-                  de {stats.students.total} cadastrados
+                  de {displayStats.students.total} cadastrados
                 </span>
               </div>
               <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded">
-                {stats.students.total > 0 ? Math.round((stats.students.active / stats.students.total) * 100) : 100}%
+                {displayStats.students.total > 0 ? Math.round((displayStats.students.active / displayStats.students.total) * 100) : 100}%
               </span>
             </div>
           </div>
@@ -1630,21 +1770,21 @@ export function Dashboard() {
                 </div>
               </div>
               <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[9px] font-bold">
-                {isRefreshing ? '...' : `${stats.classes.active} ativas`}
+                {isRefreshing ? '...' : `${displayStats.classes.active} ativas`}
               </span>
             </div>
 
             <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
               <div className="flex items-baseline gap-1.5">
                 <span className="text-xl font-black text-slate-900 tabular-nums">
-                  {isRefreshing ? '...' : stats.classes.active}
+                  {isRefreshing ? '...' : displayStats.classes.active}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">
                   em andamento
                 </span>
               </div>
               <span className="text-[9.5px] font-semibold text-slate-400">
-                Total: {stats.classes.total}
+                Total: {displayStats.classes.total}
               </span>
             </div>
           </div>
@@ -1668,21 +1808,21 @@ export function Dashboard() {
                 </div>
               </div>
               <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[9px] font-bold">
-                {isRefreshing ? '...' : `${stats.subjects.active} ativas`}
+                {isRefreshing ? '...' : `${displayStats.subjects.active} ativas`}
               </span>
             </div>
 
             <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
               <div className="flex items-baseline gap-1.5">
                 <span className="text-xl font-black text-slate-900 tabular-nums">
-                  {isRefreshing ? '...' : stats.subjects.active}
+                  {isRefreshing ? '...' : displayStats.subjects.active}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">
                   disciplinas ativas
                 </span>
               </div>
               <span className="text-[9.5px] font-semibold text-slate-400">
-                Total: {stats.subjects.total}
+                Total: {displayStats.subjects.total}
               </span>
             </div>
           </div>
@@ -1706,21 +1846,21 @@ export function Dashboard() {
                 </div>
               </div>
               <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-[9px] font-bold">
-                {isRefreshing ? '...' : `${stats.teachers.active} ativos`}
+                {isRefreshing ? '...' : `${displayStats.teachers.active} ativos`}
               </span>
             </div>
 
             <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
               <div className="flex items-baseline gap-1.5">
                 <span className="text-xl font-black text-slate-900 tabular-nums">
-                  {isRefreshing ? '...' : stats.teachers.active}
+                  {isRefreshing ? '...' : displayStats.teachers.active}
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">
                   docentes vinculados
                 </span>
               </div>
               <span className="text-[9.5px] font-semibold text-slate-400">
-                Total: {stats.teachers.total}
+                Total: {displayStats.teachers.total}
               </span>
             </div>
           </div>

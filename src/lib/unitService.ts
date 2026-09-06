@@ -78,34 +78,112 @@ export const deleteUnit = async (unitId: string): Promise<boolean> => {
 };
 
 export const getUnitName = (units: Unit[], unitId?: string): string => {
-  if (!unitId || unitId === 'matriz') {
+  if (!unitId || unitId === 'matriz' || unitId === 'MAT') {
     const main = units.find(u => u.is_main || u.id === 'matriz');
     return main?.name || 'Sede / Matriz';
   }
-  const found = units.find(u => u.id === unitId);
-  return found?.name || 'Sede / Matriz';
+  const norm = unitId.trim().toLowerCase();
+  const found = units.find(u => 
+    u.id.toLowerCase() === norm || 
+    u.name?.toLowerCase() === norm ||
+    u.code?.toLowerCase() === norm
+  );
+  if (found) return found.name;
+  
+  // Se o identificador já for um nome legível (ex: "Unidade Pimentas"), usa o próprio valor
+  if (unitId.includes(' ') || !unitId.startsWith('unit_')) {
+    return unitId;
+  }
+  return 'Unidade Vinculada';
 };
 
 export const getUnitCode = (units: Unit[], unitId?: string): string => {
-  if (!unitId || unitId === 'matriz') {
+  if (!unitId || unitId === 'matriz' || unitId === 'MAT') {
     const main = units.find(u => u.is_main || u.id === 'matriz');
     return main?.code || 'MAT';
   }
-  const found = units.find(u => u.id === unitId);
-  return found?.code || 'MAT';
+  const norm = unitId.trim().toLowerCase();
+  const found = units.find(u => 
+    u.id.toLowerCase() === norm || 
+    u.name?.toLowerCase() === norm ||
+    u.code?.toLowerCase() === norm
+  );
+  return found?.code || 'POLO';
+};
+
+/**
+ * Extrai o identificador de unidade de qualquer entidade de forma segura.
+ */
+export const getItemUnitId = (item: any): string | undefined => {
+  if (!item) return undefined;
+  return item.unit_id || item.unitId || item.unit || item.polo || item.polo_id || undefined;
 };
 
 /**
  * Verifica se um registro pertence à unidade selecionada.
- * Itens sem unit_id pertencem por padrão à 'matriz'.
- * Se 'all' estiver selecionado, aceita todos.
+ * - Se 'all' estiver selecionado, aceita todos.
+ * - Itens sem unit_id pertencem por padrão à 'matriz'.
+ * - Suporta correspondência por ID, Nome e Código com tolerância a maiúsculas/minúsculas.
  */
-export const isItemInUnit = (itemUnitId: string | undefined, selectedUnitId: string): boolean => {
-  if (!selectedUnitId || selectedUnitId === 'all') return true;
-  if (selectedUnitId === 'matriz') {
-    return !itemUnitId || itemUnitId === 'matriz';
+export const isItemInUnit = (
+  itemUnitId: string | undefined, 
+  selectedUnitId: string, 
+  units: Unit[] = []
+): boolean => {
+  if (!selectedUnitId || selectedUnitId === 'all' || selectedUnitId.toLowerCase() === 'todas') {
+    return true;
   }
-  return itemUnitId === selectedUnitId;
+
+  const selNorm = selectedUnitId.trim().toLowerCase();
+  const isMatrizSelected = selNorm === 'matriz' || selNorm === 'mat' || selNorm === 'sede' || selNorm === 'sede / matriz';
+
+  // Se o item não possui unidade definida, ele pertence por padrão à Matriz
+  if (!itemUnitId || itemUnitId.trim() === '') {
+    return isMatrizSelected;
+  }
+
+  const itemNorm = itemUnitId.trim().toLowerCase();
+
+  if (isMatrizSelected) {
+    return (
+      itemNorm === 'matriz' || 
+      itemNorm === 'mat' || 
+      itemNorm === 'sede' || 
+      itemNorm.includes('matriz') ||
+      itemNorm.includes('sede')
+    );
+  }
+
+  // Compara diretamente
+  if (itemNorm === selNorm) return true;
+
+  // Busca na lista de unidades conhecidas para resolver ID vs Nome vs Código
+  const activeUnit = units.find(u => 
+    u.id.toLowerCase() === selNorm || 
+    u.name?.toLowerCase() === selNorm || 
+    u.code?.toLowerCase() === selNorm
+  );
+
+  if (activeUnit) {
+    if (itemNorm === activeUnit.id.toLowerCase()) return true;
+    if (activeUnit.name && itemNorm === activeUnit.name.toLowerCase()) return true;
+    if (activeUnit.code && itemNorm === activeUnit.code.toLowerCase()) return true;
+  }
+
+  // Também tenta cruzar no sentido inverso (caso itemNorm seja um ID e selNorm seja o Nome)
+  const itemUnit = units.find(u => 
+    u.id.toLowerCase() === itemNorm || 
+    u.name?.toLowerCase() === itemNorm || 
+    u.code?.toLowerCase() === itemNorm
+  );
+
+  if (itemUnit) {
+    if (itemUnit.id.toLowerCase() === selNorm) return true;
+    if (itemUnit.name && itemUnit.name.toLowerCase() === selNorm) return true;
+    if (itemUnit.code && itemUnit.code.toLowerCase() === selNorm) return true;
+  }
+
+  return false;
 };
 
 /**
@@ -114,19 +192,25 @@ export const isItemInUnit = (itemUnitId: string | undefined, selectedUnitId: str
 export const filterListByUnit = <T>(
   items: T[], 
   selectedUnitId: string, 
-  getUnitId: (item: T) => string | undefined
+  getUnitId: (item: T) => string | undefined,
+  units: Unit[] = []
 ): T[] => {
   if (!selectedUnitId || selectedUnitId === 'all') return items;
-  return items.filter(item => isItemInUnit(getUnitId(item), selectedUnitId));
+  return items.filter(item => isItemInUnit(getUnitId(item), selectedUnitId, units));
 };
 
 /**
  * Retorna a unidade restrita para o usuário logado, se houver.
- * Administradores e usuários com unit_id === 'all' têm acesso irrestrito.
+ * - Usuários sem perfil ou com unit_id === 'all' têm acesso irrestrito.
+ * - Qualquer usuário (incluindo secretário ou assistente) com unit_id específico é restrito à sua unidade.
  */
 export const getUserRestrictedUnit = (profile: any): string | null => {
   if (!profile) return null;
-  const unitId = profile.unit_id || (profile as any).unitId;
-  if (!unitId || unitId === 'all') return null;
-  return unitId;
+  const unitId = profile.unit_id || (profile as any).unitId || (profile as any).unit || (profile as any).polo;
+  if (!unitId || typeof unitId !== 'string') return null;
+  const norm = unitId.trim().toLowerCase();
+  if (norm === '' || norm === 'all' || norm === 'todas' || norm === 'global') {
+    return null;
+  }
+  return unitId.trim();
 };
