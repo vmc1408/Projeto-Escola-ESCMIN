@@ -356,18 +356,31 @@ export function Users() {
               await saveData('email_registry', emailId, {
                 ...registryCheck,
                 role: formData.role,
-                teacher_id: formData.teacher_id || null
+                teacher_id: formData.teacher_id || null,
+                unit_id: formData.unit_id || 'all'
               });
-              console.log("[Segurança] Registro central em email_registry atualizado para o cargo:", formData.role);
+              console.log("[Segurança] Registro central em email_registry atualizado para o cargo e polo:", formData.role, formData.unit_id);
             }
           } catch (regErr) {
             console.warn("Falha ao atualizar email_registry durante edição:", regErr);
           }
+
+          try {
+            localStorage.setItem(`user_unit_${emailId}`, formData.unit_id || 'all');
+            localStorage.setItem(`user_unit_${selectedUser.id}`, formData.unit_id || 'all');
+          } catch {}
         }
         
         // Handle security if it's the current user
-        if (userAuth?.uid === selectedUser.id && (newEmail !== userAuth.email || passwordData.newPassword)) {
-          await handleUpdateSecurity();
+        if (userAuth?.uid === selectedUser.id) {
+          try {
+            await supabase.auth.updateUser({
+              data: { unit_id: formData.unit_id || 'all' }
+            });
+          } catch {}
+          if (newEmail !== userAuth.email || passwordData.newPassword) {
+            await handleUpdateSecurity();
+          }
         }
 
         if (userAuth?.uid === selectedUser.id && refreshProfile) {
@@ -446,6 +459,11 @@ export function Users() {
           created_at: new Date().toISOString(),
           is_pre_registered: true
         });
+
+        try {
+          localStorage.setItem(`user_unit_${emailId}`, formData.unit_id || 'all');
+        } catch {}
+
         setNotification({ type: 'success', message: 'Usuário pré-cadastrado com sucesso!' });
       }
       setIsEditing(false);

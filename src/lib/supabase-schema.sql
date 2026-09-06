@@ -334,6 +334,34 @@ CREATE TABLE IF NOT EXISTS receipts (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 20. Unidades e Filiais / Polos Educacionais
+CREATE TABLE IF NOT EXISTS units (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    is_main BOOLEAN DEFAULT false,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    phone TEXT,
+    email TEXT,
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Inserção da Unidade Matriz Padrão se não existir
+INSERT INTO units (id, code, name, is_main, active)
+VALUES ('matriz', 'MAT', 'Sede / Matriz', true, true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Garantir colunas de escopo de unidade (unit_id) nas tabelas principais
+ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS unit_id TEXT DEFAULT 'all';
+ALTER TABLE IF EXISTS email_registry ADD COLUMN IF NOT EXISTS unit_id TEXT DEFAULT 'all';
+ALTER TABLE IF EXISTS students ADD COLUMN IF NOT EXISTS unit_id TEXT DEFAULT 'matriz';
+ALTER TABLE IF EXISTS classes ADD COLUMN IF NOT EXISTS unit_id TEXT DEFAULT 'matriz';
+ALTER TABLE IF EXISTS teachers ADD COLUMN IF NOT EXISTS unit_id TEXT DEFAULT 'matriz';
+ALTER TABLE IF EXISTS subjects ADD COLUMN IF NOT EXISTS unit_id TEXT DEFAULT 'matriz';
+
 -- Habilitar RLS para todas as tabelas
 DO $$ 
 DECLARE 

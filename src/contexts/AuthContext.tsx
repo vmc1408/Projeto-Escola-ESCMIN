@@ -105,6 +105,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data) {
+        // Garante a recuperação resiliente de unit_id caso o Supabase não tenha a coluna na tabela users
+        const userEmail = (data.email || userRef.current?.email || '').toLowerCase().trim();
+        if (!data.unit_id || data.unit_id === 'all') {
+          // 1. Tenta recuperar dos metadados da sessão Supabase
+          const currentMeta = (userRef.current as any)?.user_metadata;
+          const metaUnit = currentMeta?.unit_id || (userRef.current as any)?.unit_id;
+          if (metaUnit && metaUnit !== 'all') {
+            data.unit_id = metaUnit;
+          }
+          // 2. Tenta recuperar do registro central email_registry
+          if ((!data.unit_id || data.unit_id === 'all') && userEmail) {
+            try {
+              const regData: any = await fetchById('email_registry', userEmail, 3000);
+              if (regData?.unit_id && regData.unit_id !== 'all') {
+                data.unit_id = regData.unit_id;
+              }
+            } catch {}
+          }
+          // 3. Tenta recuperar do cache local persistente
+          if ((!data.unit_id || data.unit_id === 'all') && userEmail) {
+            try {
+              const cached = localStorage.getItem(`user_unit_${userEmail}`) || localStorage.getItem(`user_unit_${data.id}`);
+              if (cached && cached !== 'all') {
+                data.unit_id = cached;
+              }
+            } catch {}
+          }
+        }
         setProfile(data as UserProfile);
         setLoading(false);
       } else if (!isRetry) {
