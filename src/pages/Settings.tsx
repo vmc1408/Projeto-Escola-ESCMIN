@@ -48,6 +48,7 @@ import { fetchCount, uploadImage, saveData, fetchAll, getInstitutionSettings, sa
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Student, Class, InstitutionSettings, UserProfile, AcademicParameters } from '../types';
 import { cn } from '../lib/utils';
+import { UnitsSettingsTab } from '../components/UnitsSettingsTab';
 import { financialService } from '../services/financialService';
 import { schemaService } from '../services/schemaService';
 import { useAuth } from '../contexts/AuthContext';
@@ -99,10 +100,10 @@ export function Settings() {
     }
   }, []);
 
-  const [activeTab, setActiveTab] = useState<'institution' | 'maintenance' | 'academic' | 'security'>(() => {
+  const [activeTab, setActiveTab] = useState<'institution' | 'units' | 'maintenance' | 'academic' | 'security'>(() => {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab');
-    if (tab === 'institution' || tab === 'maintenance' || tab === 'academic' || tab === 'security') {
+    if (tab === 'institution' || tab === 'units' || tab === 'maintenance' || tab === 'academic' || tab === 'security') {
       return tab;
     }
     return 'institution';
@@ -111,7 +112,7 @@ export function Settings() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tab = params.get('tab');
-    if (tab && (tab === 'institution' || tab === 'maintenance' || tab === 'academic' || tab === 'security')) {
+    if (tab && (tab === 'institution' || tab === 'units' || tab === 'maintenance' || tab === 'academic' || tab === 'security')) {
       setActiveTab(tab);
     }
   }, [location.search]);
@@ -1044,6 +1045,19 @@ export function Settings() {
           </button>
 
           <button 
+            onClick={() => setActiveTab('units')}
+            className={cn(
+              "w-full px-4 py-2.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-3 text-left cursor-pointer",
+              activeTab === 'units' 
+                ? "bg-blue-600 text-white shadow-md font-extrabold" 
+                : "text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+            )}
+          >
+            <School size={16} />
+            Unidades / Polos
+          </button>
+
+          <button 
             onClick={() => setActiveTab('academic')}
             className={cn(
               "w-full px-4 py-2.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-3 text-left",
@@ -1456,6 +1470,12 @@ export function Settings() {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {activeTab === 'units' && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <UnitsSettingsTab />
           </div>
         )}
 

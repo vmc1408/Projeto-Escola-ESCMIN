@@ -31,7 +31,8 @@ import {
   ArrowLeft,
   Layers,
   Sparkles,
-  School
+  School,
+  Building2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Webcam from 'react-webcam';
@@ -44,6 +45,7 @@ import { uploadImage, fetchAll, saveData, deleteData, saveBatch, deleteBatch, fe
 import { Student, Class, Enrollment, Course } from '../types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useUnits } from '../contexts/UnitContext';
 
 // Memoized List Item to prevent lag
 const StudentItem = React.memo(({ 
@@ -52,6 +54,7 @@ const StudentItem = React.memo(({
   onSelect, 
   isUnallocated,
   parallelClassesCount,
+  unitName,
   className 
 }: { 
   student: Student, 
@@ -59,6 +62,7 @@ const StudentItem = React.memo(({
   onSelect: (s: Student) => void,
   isUnallocated?: boolean,
   parallelClassesCount?: number,
+  unitName?: string,
   className?: string
 }) => {
   return (
@@ -88,6 +92,11 @@ const StudentItem = React.memo(({
           )}>
             {student.status || 'Ativo'}
           </span>
+          {unitName && (
+            <span className="text-[8.5px] font-bold px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wider">
+              {unitName}
+            </span>
+          )}
           {isUnallocated && (
             <span className="text-[8.5px] font-black px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 uppercase tracking-wider">
               Sem Turma
@@ -184,12 +193,14 @@ const INITIAL_STUDENT_STATE: Partial<Student> = {
   course: '',
   pastoral_participates: '',
   start_date: '',
-  photo_url: ''
+  photo_url: '',
+  unit_id: 'matriz'
 };
 
 export function Students() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { activeUnits, hasMultipleUnits, selectedUnitId: globalUnitId, getUnitName } = useUnits();
   const [returnOrigin, setReturnOrigin] = useState<{
     path: string;
     classId?: string;
@@ -449,12 +460,14 @@ export function Students() {
     }
     const cronoStartDate = targetClass ? getScheduleStartDateForClass(targetClass) : '';
     const startDate = student.start_date || cronoStartDate || targetClass?.start_date || '';
+    const studentUnitId = student.unit_id || targetClass?.unit_id || 'matriz';
 
     const enrichedStudent: Student = {
       ...student,
       class_id: effectiveClassId,
       course: detectedCourse,
-      start_date: startDate
+      start_date: startDate,
+      unit_id: studentUnitId
     };
 
     setSelectedStudent(enrichedStudent);
@@ -468,6 +481,7 @@ export function Students() {
       class_id: effectiveClassId,
       course: detectedCourse,
       start_date: startDate,
+      unit_id: studentUnitId,
       email: student.email || '',
       phone_mobile: student.phone_mobile || '',
       phone_residential: student.phone_residential || '',
@@ -533,15 +547,17 @@ export function Students() {
   const handleNew = useCallback(() => {
     setSelectedStudent(null);
     const nextReg = generateNextRegistrationNumber(students);
+    const defaultUnitId = globalUnitId !== 'all' ? globalUnitId : (activeUnits[0]?.id || 'matriz');
     setFormData({
       ...INITIAL_STUDENT_STATE,
       name: '',
       status: 'Ativo',
       registration_number: nextReg,
+      unit_id: defaultUnitId
     });
     setIsEditing(true);
     setHoverShowList(false);
-  }, [students]);
+  }, [students, globalUnitId, activeUnits]);
 
   // Fecha a ficha e retorna para a tela / modal de origem se veio de outro módulo
   const handleCloseFicha = useCallback(() => {
@@ -885,8 +901,11 @@ export function Students() {
         finalStartDate = cronoStartDate;
       }
       
+      const studentUnitId = formData.unit_id || targetClass?.unit_id || 'matriz';
+
       const dataToSave: any = { 
         ...formData,
+        unit_id: studentUnitId,
         birth_date: parseDateToDB(formData.birth_date),
         start_date: finalStartDate,
         class_id: formData.class_id || null,
@@ -913,10 +932,13 @@ export function Students() {
       try {
         savedId = await saveData('students', selectedStudent?.id, dataToSave);
       } catch (err: any) {
-        if (err.message?.includes('phone_mobile_is_whatsapp')) {
-          console.warn('[Supabase] Coluna phone_mobile_is_whatsapp ausente, salvando sem ela.');
+        if (err.message?.includes('phone_mobile_is_whatsapp') || err.message?.includes('unit_id')) {
+          console.warn('[Supabase] Coluna ausente no banco, salvando sem campos opcionais extras.');
           const fallbackData = { ...dataToSave };
           delete fallbackData.phone_mobile_is_whatsapp;
+          if (err.message?.includes('unit_id')) {
+            delete fallbackData.unit_id;
+          }
           savedId = await saveData('students', selectedStudent?.id, fallbackData);
         } else {
           throw err;
@@ -1476,7 +1498,14 @@ export function Students() {
       // If user selected "all" for year or unallocated is selected, year match is true
       if (selectedYear === 'all' || selectedClassId === 'unallocated') matchesYear = true;
 
-      return matchesSearch && matchesStatus && matchesYear && matchesClass;
+      let matchesUnit = true;
+      if (hasMultipleUnits && globalUnitId !== 'all') {
+        const studentClass = classes.find(c => c.id === s.class_id);
+        const studentUnit = s.unit_id || studentClass?.unit_id || 'matriz';
+        matchesUnit = studentUnit === globalUnitId;
+      }
+
+      return matchesSearch && matchesStatus && matchesYear && matchesClass && matchesUnit;
     }).sort((a, b) => {
       // If user typed a search term, prioritize highest relevance matches first
       if (trimmedSearch) {
@@ -1496,7 +1525,7 @@ export function Students() {
         return (b.registration_number || '').localeCompare(a.registration_number || '', undefined, { numeric: true });
       }
     });
-  }, [students, searchTerm, statusFilter, selectedYear, selectedClassId, sortBy, allEnrollments, unallocatedStudentIdsSet]);
+  }, [students, searchTerm, statusFilter, selectedYear, selectedClassId, sortBy, allEnrollments, unallocatedStudentIdsSet, hasMultipleUnits, globalUnitId, classes]);
 
   const availableYears = React.useMemo(() => {
     return Array.from(new Set(students.map(s => getYearFromRegistration(s.registration_number)).filter(Boolean))).sort().reverse();
@@ -1702,6 +1731,7 @@ export function Students() {
               onSelect={handleSelectStudent}
               isUnallocated={unallocatedStudentIdsSet.has(student.id)}
               parallelClassesCount={studentParallelEnrollmentsMap.get(student.id)}
+              unitName={hasMultipleUnits ? getUnitName(student.unit_id || classes.find(c => c.id === student.class_id)?.unit_id) : undefined}
             />
           ))}
         </div>
@@ -2083,11 +2113,13 @@ export function Students() {
                             const detectedCourse = targetClass ? detectCourseFromClass(targetClass, coursesList) : '';
                             const cronoStartDate = targetClass ? getScheduleStartDateForClass(targetClass) : '';
                             const resolvedStartDate = cronoStartDate || targetClass?.start_date || '';
+                            const classUnit = targetClass?.unit_id || formData.unit_id || 'matriz';
 
                             setFormData(prev => ({
                               ...prev,
                               class_id: newClassId,
                               course: detectedCourse || prev.course,
+                              ...(classUnit ? { unit_id: classUnit } : {}),
                               ...(resolvedStartDate ? { start_date: resolvedStartDate } : {})
                             }));
 
@@ -2181,6 +2213,32 @@ export function Students() {
                           tabIndex={8}
                         />
                       </div>
+
+                      {hasMultipleUnits && (
+                        <div className="col-span-12 bg-blue-50/60 p-2.5 border border-blue-200/80 space-y-1">
+                          <label className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                            <Building2 size={13} className="text-blue-700" />
+                            Polo / Unidade Educacional do Aluno
+                          </label>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <select
+                              disabled={!isEditing}
+                              value={formData.unit_id || 'matriz'}
+                              onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
+                              className="flex-1 px-3 py-1.5 bg-white border border-blue-200 text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
+                            >
+                              {activeUnits.map(u => (
+                                <option key={u.id} value={u.id}>
+                                  {u.name} {u.is_main || u.id === 'matriz' ? '(Matriz Diocesana)' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-[11px] text-blue-700 font-medium">
+                              {formData.unit_id ? `Polo vinculado: ${getUnitName(formData.unit_id)}` : 'Polo Padrão Matriz'}
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Enrollment Management - Integrated directly */}
                       {selectedStudent?.id ? (

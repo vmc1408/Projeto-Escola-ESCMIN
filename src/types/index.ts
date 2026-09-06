@@ -17,6 +17,22 @@ export interface UserProfile {
   app_lock_enabled?: boolean;
   app_lock_timeout?: number;
   teacher_id?: string;
+  unit_id?: string; // ID da unidade/polo ao qual o usuário está vinculado ('all' para todas ou ID do polo)
+}
+
+export interface Unit {
+  id: string;
+  code: string;
+  name: string;
+  is_main: boolean;
+  address?: string;
+  city?: string;
+  state?: string;
+  phone?: string;
+  email?: string;
+  active: boolean;
+  user_id?: string;
+  created_at?: string;
 }
 
 export type StudentStatus = 'Ativo' | 'Inativo' | 'Concluído' | 'Suspenso';
@@ -25,6 +41,7 @@ export interface Student {
   id: string;
   registration_number: string; // Format: 000000/YYYY
   name: string;
+  unit_id?: string; // ID da unidade/polo (ex: 'matriz')
   cpf?: string;
   rg?: string;
   birth_date?: string;
@@ -114,6 +131,7 @@ export interface Class {
   enabled_years?: string[];
   is_special?: boolean;
   unallocated?: boolean;
+  unit_id?: string; // ID da unidade/filial (ex: 'matriz')
   user_id: string;
   created_at: string;
 }
@@ -166,6 +184,7 @@ export interface Teacher {
   address_zip?: string;
   birth_date?: string;
   observations?: string;
+  unit_id?: string; // ID da unidade/filial (ex: 'matriz')
   user_id: string;
   created_at: string;
 }

@@ -30,6 +30,7 @@ import { Login } from './pages/Login';
 import { ResetPassword } from './pages/ResetPassword';
 import { ImportProvider } from './contexts/ImportContext';
 import { AuthProvider } from './contexts/AuthContext';
+import { UnitProvider } from './contexts/UnitContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { GlobalImportOverlay } from './components/GlobalImportOverlay';
 import { PinLock } from './components/PinLock';
@@ -123,7 +124,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <AppContent />
+        <UnitProvider>
+          <AppContent />
+        </UnitProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

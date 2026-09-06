@@ -27,7 +27,8 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatCurrency, cn, detectSubjectSemester, formatSubjectDisplayName } from '../lib/utils';
 import { fetchAll, saveData, deleteData, uploadImage } from '../lib/database';
-import { RotateCcw, FileText as FileIcon } from 'lucide-react';
+import { RotateCcw, FileText as FileIcon, Building2 } from 'lucide-react';
+import { useUnits } from '../contexts/UnitContext';
 
 interface Teacher {
   id: string;
@@ -47,6 +48,7 @@ interface Teacher {
   status: 'Ativo' | 'Inativo';
   observations?: string;
   subject_ids?: string[];
+  unit_id?: string;
   created_at: string;
   user_id: string;
   photo_url?: string;
@@ -112,11 +114,13 @@ const TeacherItem = React.memo(({
   teacher, 
   isSelected, 
   onSelect, 
+  unitName,
   className 
 }: { 
   teacher: Teacher, 
   isSelected: boolean, 
   onSelect: (t: Teacher) => void,
+  unitName?: string,
   className?: string
 }) => {
   return (
@@ -150,6 +154,11 @@ const TeacherItem = React.memo(({
           )}>
             {teacher.status || 'Ativo'}
           </span>
+          {unitName && (
+            <span className="px-1.5 py-0.5 text-[8px] font-bold rounded uppercase bg-blue-50 text-blue-700 border border-blue-200">
+              {unitName}
+            </span>
+          )}
         </div>
         <p className="text-xs text-slate-500 truncate">{teacher.email || 'Sem e-mail'}</p>
       </div>
@@ -158,6 +167,7 @@ const TeacherItem = React.memo(({
 });
 
 export function Teachers() {
+  const { activeUnits, hasMultipleUnits, selectedUnitId: globalUnitId, getUnitName } = useUnits();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -222,6 +232,17 @@ export function Teachers() {
           if (match && match[1]) {
             normalized.photo_url = match[1].trim();
           }
+        }
+
+        // FALLBACK: Extract unit_id if stored in observations metadata
+        if (!normalized.unit_id && normalized.observations) {
+          const match = normalized.observations.match(/\[UNIT_ID:([\s\S]*?)\]/);
+          if (match && match[1]) {
+            normalized.unit_id = match[1].trim();
+          }
+        }
+        if (!normalized.unit_id) {
+          normalized.unit_id = 'matriz';
         }
 
         return normalized;
@@ -532,6 +553,7 @@ export function Teachers() {
       code: nextCode,
       status: 'Ativo',
       subject_ids: [],
+      unit_id: globalUnitId !== 'all' ? globalUnitId : (activeUnits[0]?.id || 'matriz')
     });
     setIsEditing(true);
     setHoverShowList(false);
@@ -543,16 +565,18 @@ export function Teachers() {
       
       const syncData = { 
         ...formData,
-        subject_ids: formData.subject_ids || []
+        subject_ids: formData.subject_ids || [],
+        unit_id: formData.unit_id || 'matriz'
       };
 
       // PROACTIVE METADATA SYNC:
-      // Always sync subject_ids and photo_url into observations metadata before saving.
+      // Always sync subject_ids, photo_url and unit_id into observations metadata before saving.
       // This ensures data persistence even if the Supabase column is missing.
       let baseObs = (syncData.observations || '')
         .replace(/\[SUBJECTS:(\[[\s\S]*?\])\]/g, '')
         .replace(/\[SUBJECTS:\[[\s\S]*?\]\]/g, '')
         .replace(/\[PHOTO_URL:[\s\S]*?\]/g, '')
+        .replace(/\[UNIT_ID:[\s\S]*?\]/g, '')
         .replace(/\]\]$/g, '')
         .trim();
 
@@ -563,6 +587,9 @@ export function Teachers() {
       if (syncData.photo_url) {
         metadataParts.push(`[PHOTO_URL:${syncData.photo_url}]`);
       }
+      if (syncData.unit_id) {
+        metadataParts.push(`[UNIT_ID:${syncData.unit_id}]`);
+      }
 
       if (metadataParts.length > 0) {
         syncData.observations = (baseObs + (baseObs ? '\n' : '') + metadataParts.join('\n')).trim();
@@ -572,7 +599,19 @@ export function Teachers() {
 
       console.log('[Teachers] Saving data:', syncData);
       
-      const savedId = await saveData('teachers', selectedTeacher?.id, syncData);
+      let savedId;
+      try {
+        savedId = await saveData('teachers', selectedTeacher?.id, syncData);
+      } catch (saveErr: any) {
+        if (saveErr.message?.includes('unit_id')) {
+          console.warn('[Teachers] Coluna unit_id ausente no banco, persistido via observações metadata');
+          const fallbackData = { ...syncData };
+          delete fallbackData.unit_id;
+          savedId = await saveData('teachers', selectedTeacher?.id, fallbackData);
+        } else {
+          throw saveErr;
+        }
+      }
       
       setNotification({ type: 'success', message: 'Ficha do professor salva com sucesso!' });
       setIsEditing(false);
@@ -1053,7 +1092,13 @@ export function Teachers() {
         return true;
       });
       
-      return matchesSearch && matchesStatus && matchesSubject && matchesSemester;
+      let matchesUnit = true;
+      if (hasMultipleUnits && globalUnitId !== 'all') {
+        const teacherUnit = t.unit_id || 'matriz';
+        matchesUnit = teacherUnit === globalUnitId;
+      }
+
+      return matchesSearch && matchesStatus && matchesSubject && matchesSemester && matchesUnit;
     });
 
     return [...result].sort((a, b) => {
@@ -1065,7 +1110,7 @@ export function Teachers() {
       }
       return a.name.localeCompare(b.name);
     });
-  }, [teachers, searchTerm, statusFilter, subjectFilter, semesterFilter, sortBy, subjects]);
+  }, [teachers, searchTerm, statusFilter, subjectFilter, semesterFilter, sortBy, subjects, hasMultipleUnits, globalUnitId]);
 
   const actualListCollapsed = selectedTeacher !== null || isEditing;
 
@@ -1206,6 +1251,7 @@ export function Teachers() {
                 teacher={teacher}
                 isSelected={selectedTeacher?.id === teacher.id}
                 onSelect={handleSelectTeacher}
+                unitName={hasMultipleUnits ? getUnitName(teacher.unit_id) : undefined}
               />
             ))}
           </div>
@@ -1461,6 +1507,28 @@ export function Teachers() {
                         <option value="Inativo">Inativo</option>
                       </select>
                     </div>
+                    {hasMultipleUnits && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                          <Building2 size={13} className="text-blue-900" />
+                          Polo / Unidade Principal
+                        </label>
+                        <select 
+                          disabled={!isEditing}
+                          value={formData.unit_id || 'matriz'}
+                          onChange={(e) => setFormData({...formData, unit_id: e.target.value})}
+                          onKeyDown={handleKeyDown}
+                          className="w-full px-4 py-2 bg-slate-50 border-none rounded-none text-sm focus:ring-2 focus:ring-slate-500/10 disabled:opacity-60 font-semibold"
+                          tabIndex={12}
+                        >
+                          {activeUnits.map(u => (
+                            <option key={u.id} value={u.id}>
+                              {u.name} {u.is_main || u.id === 'matriz' ? '(Matriz)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 </section>
 

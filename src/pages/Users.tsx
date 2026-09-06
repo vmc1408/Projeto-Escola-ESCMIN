@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, RefreshCw, ChevronDown, CheckCircle2, XCircle, Shield, Plus, Search, Edit2, Trash2, Save, X, Loader2, Mail, User, MoreVertical, Key, Zap, LogIn, Upload, GraduationCap, BookOpen } from 'lucide-react';
+import { Camera, RefreshCw, ChevronDown, CheckCircle2, XCircle, Shield, Plus, Search, Edit2, Trash2, Save, X, Loader2, Mail, User, MoreVertical, Key, Zap, LogIn, Upload, GraduationCap, BookOpen, Building2 } from 'lucide-react';
 import { fetchAll, saveData, deleteData, uploadImage, fetchById, fetchQuery } from '../lib/database';
 import { supabase } from '../lib/supabase';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, UserRole, Teacher } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { useUnits } from '../contexts/UnitContext';
 import { findTeacherForUser } from '../lib/teacherScope';
 import Webcam from 'react-webcam';
 
 export function Users() {
   const { user: userAuth, profile: currentProfile, refreshProfile, isAdmin, isDirector, isSecretary, switchUser } = useAuth();
+  const { units, activeUnits, getUnitName } = useUnits();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +36,8 @@ export function Users() {
     status: 'active' as 'active' | 'inactive',
     avatar_url: '',
     pin: '',
-    teacher_id: ''
+    teacher_id: '',
+    unit_id: 'all'
   });
 
   const [passwordData, setPasswordData] = useState({ newPassword: '', confirmPassword: '' });
@@ -188,7 +191,8 @@ export function Users() {
       status: user.status,
       avatar_url: user.avatar_url || '',
       pin: user.pin || '',
-      teacher_id: user.teacher_id || matchedTeacher?.id || ''
+      teacher_id: user.teacher_id || matchedTeacher?.id || '',
+      unit_id: user.unit_id || 'all'
     });
     setNewEmail(user.email);
     setPasswordData({ newPassword: '', confirmPassword: '' });
@@ -205,7 +209,8 @@ export function Users() {
       status: 'active',
       avatar_url: '',
       pin: '',
-      teacher_id: ''
+      teacher_id: '',
+      unit_id: 'all'
     });
     setNewEmail('');
     setPasswordData({ newPassword: '', confirmPassword: '' });
@@ -419,6 +424,7 @@ export function Users() {
             email: emailId, 
             role: formData.role,
             teacher_id: formData.teacher_id || null,
+            unit_id: formData.unit_id || 'all',
             registered_at: new Date().toISOString(),
             status: 'blocked'
           });
@@ -436,6 +442,7 @@ export function Users() {
           status: formData.status,
           pin: formData.pin,
           teacher_id: formData.teacher_id || null,
+          unit_id: formData.unit_id || 'all',
           created_at: new Date().toISOString(),
           is_pre_registered: true
         });
@@ -915,6 +922,23 @@ export function Users() {
                             )}>
                               {user.role === 'admin' ? 'Administrador' : user.role === 'diretor' ? 'Diretoria' : user.role === 'secretario' ? 'Secretário Acadêmico' : user.role === 'assistente' ? 'Assistente de Secretaria' : 'Professor / Docente'}
                             </span>
+                            {user.unit_id && user.unit_id !== 'all' ? (
+                              <span 
+                                className="inline-flex items-center gap-1 text-[8px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 max-w-[190px] truncate"
+                                title={`Polo: ${getUnitName(user.unit_id)}`}
+                              >
+                                <Building2 size={10} className="text-blue-600 shrink-0" />
+                                <span className="truncate">{getUnitName(user.unit_id)}</span>
+                              </span>
+                            ) : (
+                              <span 
+                                className="inline-flex items-center gap-1 text-[8px] font-semibold text-slate-500 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200"
+                                title="Acesso a todas as unidades e filiais"
+                              >
+                                <Building2 size={10} className="text-slate-400 shrink-0" />
+                                <span>Acesso Global</span>
+                              </span>
+                            )}
                             {(user.role === 'professor' || user.role === 'docente') && (() => {
                               const linked = teachers.find(t => t.id === user.teacher_id) || findTeacherForUser(user, teachers);
                               return linked ? (
@@ -1018,12 +1042,25 @@ export function Users() {
                     <p className="text-[10px] font-bold text-slate-400 truncate max-w-[150px]">{user.email}</p>
                   </div>
                 </div>
-                <span className={cn(
-                  "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border",
-                  getRoleColor(user.role || '', user.status)
-                )}>
-                  {user.role === 'admin' ? 'Administrador' : user.role === 'diretor' ? 'Diretoria' : user.role === 'secretario' ? 'Secretário Acadêmico' : user.role === 'assistente' ? 'Assistente de Secretaria' : 'Professor / Docente'}
-                </span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border",
+                    getRoleColor(user.role || '', user.status)
+                  )}>
+                    {user.role === 'admin' ? 'Administrador' : user.role === 'diretor' ? 'Diretoria' : user.role === 'secretario' ? 'Secretário Acadêmico' : user.role === 'assistente' ? 'Assistente de Secretaria' : 'Professor / Docente'}
+                  </span>
+                  {user.unit_id && user.unit_id !== 'all' ? (
+                    <span className="inline-flex items-center gap-1 text-[7.5px] font-bold text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 max-w-[130px] truncate">
+                      <Building2 size={9} className="text-blue-600 shrink-0" />
+                      <span className="truncate">{getUnitName(user.unit_id)}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[7.5px] font-medium text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                      <Building2 size={9} className="text-slate-400 shrink-0" />
+                      <span>Global</span>
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-50">
                 {isAdmin && user.id !== currentProfile?.id && (
@@ -1566,6 +1603,42 @@ export function Users() {
                                 </select>
                                 <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                               </div>
+                            </div>
+
+                            <div className="space-y-1 md:col-span-2">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                                  <Building2 size={12} className="text-blue-600" />
+                                  Unidade de Acesso / Polo Educacional
+                                </label>
+                                <span className="text-[7.5px] font-bold text-slate-400 uppercase">
+                                  Escopo Operacional
+                                </span>
+                              </div>
+                              <div className="relative">
+                                <select
+                                  value={formData.unit_id || 'all'}
+                                  onChange={e => setFormData({...formData, unit_id: e.target.value})}
+                                  className="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-bold text-[#131b2e] appearance-none focus:bg-white focus:border-blue-200 transition-all outline-none cursor-pointer"
+                                >
+                                  <option value="all">🌐 Todas as Unidades (Acesso Geral / Sede + Filiais)</option>
+                                  {activeUnits.map(u => {
+                                    const isMain = u.is_main || u.id === 'matriz';
+                                    return (
+                                      <option key={u.id} value={u.id}>
+                                        {isMain ? '🏛️ Matriz: ' : '🏢 Filial: '} {u.name} {u.city ? `(${u.city})` : ''}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                                <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                              </div>
+                              <p className="text-[8px] font-medium text-slate-500 mt-1 ml-1 leading-relaxed">
+                                {formData.unit_id === 'all' 
+                                  ? 'Este usuário terá visão global consolidada, podendo transitar livremente por todos os polos e sede.' 
+                                  : `Usuário restrito: acessará e gerenciará estritamente os alunos, turmas, notas e relatórios vinculados a esta unidade.`
+                                }
+                              </p>
                             </div>
                          </div>
 

@@ -36,7 +36,8 @@ import {
   Hash,
   CheckSquare,
   Square,
-  UserCheck
+  UserCheck,
+  Building2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -46,6 +47,7 @@ import { detectSubjectSemester, getClassStartDateFromSchedule } from '../lib/aca
 import { fetchAll, saveData, deleteData } from '../lib/database';
 import { supabase } from '../lib/supabase';
 import { Course } from '../types';
+import { useUnits } from '../contexts/UnitContext';
 import { RotateCcw, FileText as FileIcon } from 'lucide-react';
 
 interface Class {
@@ -74,6 +76,7 @@ interface Class {
   enabled_years?: string[];
   is_special?: boolean;
   unallocated?: boolean;
+  unit_id?: string;
   created_at: string;
   user_id: string;
 }
@@ -117,12 +120,14 @@ const ClassItem = React.memo(({
   isSelected, 
   onSelect, 
   subjects,
+  unitName,
   className 
 }: { 
   cls: Class, 
   isSelected: boolean, 
   onSelect: (c: Class) => void,
   subjects: Subject[],
+  unitName?: string,
   className?: string
 }) => {
   const isInactive = cls.status === 'Inativo';
@@ -156,6 +161,16 @@ const ClassItem = React.memo(({
             "text-sm font-bold truncate tracking-tight uppercase",
             isSelected ? "text-white" : "text-slate-900"
           )}>{cls.name}</p>
+          {unitName && (
+            <span className={cn(
+              "px-1.5 py-0.5 text-[8px] font-bold uppercase rounded-none leading-none tracking-normal border flex-shrink-0",
+              isSelected 
+                ? "bg-blue-500/30 text-blue-200 border-blue-400/40" 
+                : "bg-blue-50 text-blue-800 border-blue-200"
+            )}>
+              {unitName}
+            </span>
+          )}
           {isInactive && (
             <span className={cn(
               "px-1.5 py-0.5 text-[8px] font-black uppercase rounded-none leading-none tracking-normal border flex-shrink-0",
@@ -207,12 +222,14 @@ const ClassItem = React.memo(({
 export function Classes() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { activeUnits, hasMultipleUnits, selectedUnitId: globalUnitId, getUnitName } = useUnits();
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [coursesList, setCoursesList] = useState<Course[]>([]);
   const [inst, setInst] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>('Todos');
   const [statusFilter, setStatusFilterState] = useState<'Ativo' | 'Inativo' | 'Encerrada' | 'Todos'>(() => {
     try {
       const saved = localStorage.getItem('classes_status_filter');
@@ -255,7 +272,8 @@ export function Classes() {
     period: 'Tarde',
     year: '1º Ano',
     semester: '1º Semestre',
-    start_date: ''
+    start_date: '',
+    unit_id: 'matriz'
   });
 
   const [acadSettings, setAcadSettings] = useState<any>(null);
@@ -856,6 +874,9 @@ export function Classes() {
               if (meta.start_year && (!normalized.start_year || String(normalized.start_year).trim() === '')) {
                 (normalized as any).start_year = String(meta.start_year).trim();
               }
+              if (meta.unit_id && !normalized.unit_id) {
+                normalized.unit_id = meta.unit_id;
+              }
               if (meta.subject_id_sem1_h1 !== undefined) metaSem1H1 = meta.subject_id_sem1_h1;
               if (meta.subject_id_sem1_h2 !== undefined) metaSem1H2 = meta.subject_id_sem1_h2;
               if (meta.subject_id_sem2_h1 !== undefined) metaSem2H1 = meta.subject_id_sem2_h1;
@@ -1217,7 +1238,8 @@ export function Classes() {
       subject_id_sem2_h2: (cls as any).subject_id_sem2_h2 || '',
       subject_id_sem1: (cls as any).subject_id_sem1 || '',
       subject_id_sem2: (cls as any).subject_id_sem2 || '',
-      subject_ids: cls.subject_ids || []
+      subject_ids: cls.subject_ids || [],
+      unit_id: cls.unit_id || 'matriz'
     });
     setIsEditing(false);
     setHoverShowList(false);
@@ -1388,7 +1410,8 @@ export function Classes() {
       subject_id_sem1: '',
       subject_id_sem2: '',
       subject_ids: [],
-      is_special: false
+      is_special: false,
+      unit_id: globalUnitId !== 'all' ? globalUnitId : (activeUnits[0]?.id || 'matriz')
     });
     setIsEditing(true);
     setHoverShowList(false);
@@ -1473,6 +1496,7 @@ export function Classes() {
       metadata.subject_id_sem2 = s2h1 || s2h2 || '';
       metadata.subject_ids = cleanSubjectIds;
       if (formData.is_special !== undefined) metadata.is_special = formData.is_special;
+      metadata.unit_id = formData.unit_id || 'matriz';
       
       if (Object.keys(metadata).length > 0) {
         const metadataStr = `[METADATA:${JSON.stringify(metadata)}]`;
@@ -1996,7 +2020,18 @@ export function Classes() {
 
       const matchesAcademicYear = isClassActiveInAcademicYear(c, selectedAcademicYearFilter);
 
-      return matchesSearch && matchesStatus && matchesYear && matchesSemester && matchesPeriod && matchesAcademicYear;
+      const matchesUnit = (() => {
+        const classUnitId = c.unit_id || 'matriz';
+        if (selectedUnitFilter !== 'Todos') {
+          return classUnitId === selectedUnitFilter;
+        }
+        if (globalUnitId !== 'all') {
+          return classUnitId === globalUnitId;
+        }
+        return true;
+      })();
+
+      return matchesSearch && matchesStatus && matchesYear && matchesSemester && matchesPeriod && matchesAcademicYear && matchesUnit;
     });
 
     return [...result].sort((a, b) => {
@@ -2011,9 +2046,9 @@ export function Classes() {
       if (sortBy === 'period') return a.period.localeCompare(b.period);
       return a.name.localeCompare(b.name);
     });
-  }, [classes, subjects, searchTerm, statusFilter, selectedYearFilter, selectedSemesterFilter, selectedPeriodFilter, selectedAcademicYearFilter, sortBy, isClassActiveInAcademicYear]);
+  }, [classes, subjects, searchTerm, statusFilter, selectedYearFilter, selectedSemesterFilter, selectedPeriodFilter, selectedAcademicYearFilter, selectedUnitFilter, globalUnitId, sortBy, isClassActiveInAcademicYear]);
 
-  const hasActiveFilters = searchTerm !== '' || selectedYearFilter !== 'Todos' || selectedSemesterFilter !== 'Todos' || statusFilter !== 'Todos' || selectedPeriodFilter !== 'Todos' || selectedAcademicYearFilter !== 'ATUAL';
+  const hasActiveFilters = searchTerm !== '' || selectedYearFilter !== 'Todos' || selectedSemesterFilter !== 'Todos' || statusFilter !== 'Todos' || selectedPeriodFilter !== 'Todos' || selectedAcademicYearFilter !== 'ATUAL' || selectedUnitFilter !== 'Todos';
 
   const handleClearFilters = () => {
     setSearchTerm('');
@@ -2022,6 +2057,7 @@ export function Classes() {
     setStatusFilter('Todos');
     setSelectedPeriodFilter('Todos');
     setSelectedAcademicYearFilter('ATUAL');
+    setSelectedUnitFilter('Todos');
   };
 
   // Unallocated Students calculations
@@ -2334,9 +2370,39 @@ export function Classes() {
                 </div>
               </div>
 
+              {/* Row 4: Unidade / Polo (visível quando há múltiplas unidades) */}
+              {hasMultipleUnits && (
+                <div className="space-y-1 pt-1">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                    <Building2 size={11} className="text-blue-600" />
+                    Unidade / Polo de Funcionamento:
+                  </label>
+                  <select
+                    value={selectedUnitFilter}
+                    onChange={(e) => setSelectedUnitFilter(e.target.value)}
+                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 text-[11px] font-bold text-slate-800 focus:ring-1 focus:ring-slate-500/10 focus:border-slate-400 outline-none transition-all cursor-pointer"
+                  >
+                    <option value="Todos">Todas as Unidades (Geral)</option>
+                    {activeUnits.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} {u.is_main || u.id === 'matriz' ? '(Matriz)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Active Filter Badges / Chips */}
               {hasActiveFilters && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100">
+                  {selectedUnitFilter !== 'Todos' && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-900 text-white text-[9px] font-extrabold uppercase">
+                      Polo: {getUnitName(selectedUnitFilter)}
+                      <button type="button" onClick={() => setSelectedUnitFilter('Todos')} className="hover:text-amber-300 cursor-pointer">
+                        <X size={10} />
+                      </button>
+                    </span>
+                  )}
                   {selectedAcademicYearFilter !== 'ATUAL' && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-900 text-white text-[9px] font-extrabold uppercase">
                       Ano: {selectedAcademicYearFilter === 'Todos' ? 'Todos os Anos' : selectedAcademicYearFilter}
@@ -2415,6 +2481,7 @@ export function Classes() {
                   key={`cls-item-${cls.id || cls.code || clsIdx}-${clsIdx}`}
                   cls={cls}
                   subjects={subjects}
+                  unitName={hasMultipleUnits ? getUnitName(cls.unit_id) : undefined}
                   isSelected={selectedClass?.id === cls.id}
                   onSelect={handleSelectClass}
                 />
@@ -2796,6 +2863,33 @@ export function Classes() {
                               <option value="Encerrada">ENCERRADA</option>
                             </select>
                           </div>
+
+                          {/* Polo / Filial de Funcionamento (Quando há múltiplas unidades) */}
+                          {hasMultipleUnits && (
+                            <div className="w-full sm:w-[170px] space-y-1.5 shrink-0">
+                              <div className="flex items-center justify-between ml-0.5">
+                                <label className="text-[11px] font-extrabold text-blue-950 uppercase tracking-widest flex items-center gap-1.5">
+                                  <Building2 size={13} className="text-blue-900 shrink-0" />
+                                  Polo / Unidade
+                                </label>
+                                <span className="text-[9px] font-bold text-blue-700 uppercase tracking-wider">
+                                  FILIAL
+                                </span>
+                              </div>
+                              <select
+                                disabled={!isEditing}
+                                value={formData.unit_id || 'matriz'}
+                                onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
+                                className="w-full px-3 py-2.5 bg-white border border-slate-300 text-xs font-extrabold text-blue-950 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 outline-none transition-all uppercase h-[42px]"
+                              >
+                                {activeUnits.map(u => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.name} {u.is_main || u.id === 'matriz' ? '(Matriz)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </div>
 
                         {/* Dias de Aula na Semana */}
